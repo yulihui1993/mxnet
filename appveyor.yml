@@ -8,6 +8,11 @@ environment:
     MXNET_OPENCV_FILE: opencv.7z
     MXNET_OPENCV_DIR: opencv
     MXNET_OPENCV_PKG: https://github.com/hjk41/MiscFiles/blob/master/opencv.7z?raw=true
+    MXNET_CUDA_FILE: cudav7.5_1.7z
+    MXNET_CUDA_DIR: v7.5
+    MXNET_CUDA_PKG: https://onedrive.live.com/download?resid=1702748297938504!120&authkey=!AG5L6y02ac2nyXw&ithint=file%2c7z
+    MXNET_Template_FILE: template.7z
+    MXNET_Template_PKG: https://onedrive.live.com/download?resid=1702748297938504!122&authkey=!AG5L6y02ac2nyXw&ithint=file%2c7z
 
 install:
     - ps: >-
@@ -28,6 +33,21 @@ install:
 
             appveyor DownloadFile "${env:MXNET_OPENCV_PKG}" -FileName ${env:MXNET_OPENCV_FILE} -Timeout 1200000
         }
+         
+        if (!(Test-Path ${env:MXNET_CUDA_FILE})) {
+
+            echo "Downloading cuda from ${env:MXNET_CUDA_PKG} ..."
+
+            appveyor DownloadFile "${env:MXNET_CUDA_PKG}" -FileName ${env:MXNET_CUDA_FILE} -Timeout 1200000
+        }
+        if (!(Test-Path ${env:MXNET_Template_FILE})) {
+
+            echo "Downloading template from ${env:MXNET_Template_PKG} ..."
+
+            appveyor DownloadFile "${env:MXNET_Template_PKG}" -FileName ${env:MXNET_Template_FILE} -Timeout 1200000
+        }
+        
+        Set-AppveyorBuildVariable 'mydate' $(Get-Date -Format 'yyyyMMdd')
 
     - cmd: >-
         echo "Extracting openblas to %APPVEYOR_BUILD_FOLDER% ..."
@@ -38,9 +58,21 @@ install:
 
         7z x %MXNET_OPENCV_FILE% -y -o"%APPVEYOR_BUILD_FOLDER%" >NUL
         
+        echo "Extracting cuda to %APPVEYOR_BUILD_FOLDER% ..."
+
+        7z x %MXNET_CUDA_FILE% -y -o"%APPVEYOR_BUILD_FOLDER%" >NUL
+        
+        echo "Extracting Template to %APPVEYOR_BUILD_FOLDER%\pkg ..."
+        
+        mkdir pkg
+        
+        7z x %MXNET_Template_FILE% -y -o"%APPVEYOR_BUILD_FOLDER%\pkg" >NUL
+        
 cache:
     - openblas.7z -> appveyor.yml
     - opencv.7z -> appveyor.yml
+    - cudav7.5_1.7z -> appveyor.yml
+    - template.7z -> appveyor.yml
 
 before_build:
     - cmd: >-        
@@ -51,8 +83,10 @@ before_build:
         set OpenBLAS_HOME=%APPVEYOR_BUILD_FOLDER%/%MXNET_OPENBLAS_DIR%
 
         set OpenCV_DIR=%APPVEYOR_BUILD_FOLDER%/%MXNET_OPENCV_DIR%/build
+        
+        set CUDA_PATH=%APPVEYOR_BUILD_FOLDER%/%MXNET_CUDA_DIR%
 
-        cmake .. -DOPENCV_DIR=%OpenCV_DIR% -DUSE_CUDA=0 -DUSE_CUDNN=0 -DUSE_NVRTC=0 -DUSE_OPENCV=1 -DUSE_OPENMP=1 -DUSE_BLAS=open -DUSE_DIST_KVSTORE=0 -G "Visual Studio 12 2013 Win64"
+        cmake .. -DOPENCV_DIR=%OpenCV_DIR% -DUSE_CUDA=0 -DUSE_CUDNN=0 -DUSE_NVRTC=1 -DUSE_OPENCV=1 -DUSE_OPENMP=1 -DUSE_BLAS=open -DUSE_DIST_KVSTORE=0 -G "Visual Studio 12 2013 Win64"
 
 build_script:
     - cmd: >-
@@ -61,3 +95,39 @@ build_script:
 test_script:
     - cmd: >-
         echo "test not enabled yet"
+
+after_build:
+    - cmd: >-
+        cd ..
+        
+        copy build\Release\libmxnet.dll pkg\lib
+        
+        copy build\Release\libmxnet.lib pkg\lib
+        
+        xcopy python pkg\python /E /I
+        
+        xcopy include pkg\include /E /I
+        
+        xcopy dmlc-core\include pkg\include /E /I
+        
+        xcopy mshadow\mshadow pkg\include\mshadow /E /I
+        
+        7z a %mydate%_mxnet_x64_gpu.7z .\pkg\*
+        
+artifacts:
+  - path: $(mydate)_mxnet_x64_gpu.7z
+    name: mxnet
+ 
+deploy:
+  tag: $(mydate)
+  release: windows binary build $(mydate)
+  description: ''
+  provider: GitHub
+  auth_token:
+    secure: 0L+NXYqtTudsaat91phc5bUb7pLwFdjUdVEalTHT75+JdIPaiR7JcgnL7e2gur+R
+  artifact: $(mydate)_mxnet_x64_gpu.7z           
+  draft: true
+  prerelease: false
+  on:
+    branch: autobuild
+    appveyor_repo_tag: true
